@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Police Scanner{% endblock %}
+{% block content %}
+<main class="login-page">
+  <form id="loginForm" class="login-card" autocomplete="on">
+    <h1>Police Scanner</h1>
+    <p class="muted">Sign in to continue.</p>
+    <label>Username
+      <input type="text" name="username" autocomplete="username" required maxlength="64" autofocus />
+    </label>
+    <label>Password
+      <input type="password" name="password" autocomplete="current-password" required maxlength="256" />
+    </label>
+    <button type="submit">Sign in</button>
+    <p id="loginErr" class="error" role="alert" hidden></p>
+  </form>
+</main>
+<script type="module">
+const form = document.getElementById('loginForm');
+const err = document.getElementById('loginErr');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  err.hidden = true;
+  const fd = new FormData(form);
+  const res = await fetch('/api/auth/login', { method: 'POST', body: fd, credentials: 'same-origin' });
+  if (res.ok) {
+    location.href = '/';
+  } else {
+    let msg = 'Invalid credentials.';
+    try { const d = await res.json(); if (d.detail) msg = d.detail; } catch {}
+    err.textContent = msg;
+    err.hidden = false;
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,56 @@
+[Unit]
+Description=Police Scanner web service (FastAPI)
+After=network-online.target mosquitto.service
+Wants=network-online.target mosquitto.service
+
+[Service]
+Type=exec
+User=scanner
+Group=scanner
+WorkingDirectory=/opt/police-scanner
+EnvironmentFile=/etc/police-scanner/env
+ExecStart=/opt/police-scanner/.venv/bin/uvicorn \
+    police_scanner.main:app \
+    --host ${SCANNER_HOST} \
+    --port ${SCANNER_PORT} \
+    --proxy-headers \
+    --forwarded-allow-ips 127.0.0.1 \
+    --no-server-header \
+    --log-config /opt/police-scanner/server/police_scanner/logging.json
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+
+# Hardening — see systemd.exec(5)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=false
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @reboot @swap @debug @mount @cpu-emulation @obsolete
+
+# State directories (auto-created with correct ownership)
+ReadWritePaths=/var/lib/police-scanner /run/police-scanner
+
+# Allow controlling trunk-recorder unit only.
+# Use polkit rule (see scripts/install-pi.sh) for unprivileged systemctl.
+AmbientCapabilities=
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

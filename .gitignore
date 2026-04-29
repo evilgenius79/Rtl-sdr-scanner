@@ -1,0 +1,44 @@
+.env
+.env.*
+!.env.example
+*.pyc
+__pycache__/
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime data
+recordings/
+*.wav
+*.m4a
+*.mp3
+*.flac
+db.sqlite
+db.sqlite-*
+*.db
+
+# Generated trunk-recorder config (rendered from RR data at runtime)
+trunk_recorder/config.json
+trunk_recorder/talkgroups/
+trunk_recorder/channels/
+trunk_recorder/logs/
+
+# Secrets
+secret_key
+session_secret
+auth.json
+*.pem
+*.key
+*.crt
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Whisper models (downloaded at runtime)
+models/
