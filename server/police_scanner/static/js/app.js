@@ -1,4 +1,4 @@
-import { createApp, reactive, ref, onMounted, onUnmounted, computed, watch, h } from 'vue';
+import { createApp, reactive, ref, onMounted, onUnmounted, computed, watch, h } from '/static/js/vendor/vue.esm-browser.prod.js';
 import { api, connectWS } from './api.js';
 import LiveView from './views/Live.js';
 import SetupView from './views/Setup.js';

@@ -56,6 +56,14 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _aware(dt: datetime | None) -> datetime | None:
+    """SQLite returns naive datetimes; we always store UTC. Promote to aware on read
+    so comparisons with ``datetime.now(UTC)`` don't raise TypeError."""
+    if dt is None or dt.tzinfo is not None:
+        return dt
+    return dt.replace(tzinfo=UTC)
+
+
 async def ensure_admin_user() -> None:
     """Create the bootstrap admin user from env if no user exists."""
     settings = get_settings()
@@ -79,9 +87,14 @@ async def ensure_admin_user() -> None:
 
 
 async def authenticate(username: str, password: str, *, ip: str | None) -> User:
-    """Verify credentials. Raises HTTPException on failure with generic message
+    """Verify credentials. Raises HTTPException on failure with a generic message
     so we don't leak whether the username exists.
+
+    Bookkeeping (failed-login counter, lockout, audit events) is committed before
+    we raise, otherwise the session-context rollback would reset the counter.
     """
+    error: HTTPException | None = None
+    user_out: User | None = None
     async with session() as s:
         user = (await s.execute(select(User).where(User.username == username))).scalar_one_or_none()
         now = datetime.now(UTC)
@@ -89,13 +102,11 @@ async def authenticate(username: str, password: str, *, ip: str | None) -> User:
             # Compare against a dummy hash to keep timing roughly constant.
             verify_password(_DUMMY_HASH, password)
             s.add(AuditEvent(action="login_fail", actor=username, ip=ip, detail="unknown_user"))
-            raise _bad_creds()
-
-        if user.locked_until and user.locked_until > now:
+            error = _bad_creds()
+        elif (locked_until := _aware(user.locked_until)) and locked_until > now:
             s.add(AuditEvent(action="login_fail", actor=user.username, ip=ip, detail="locked"))
-            raise _locked(user.locked_until)
-
-        if not verify_password(user.password_hash, password):
+            error = _locked(locked_until)
+        elif not verify_password(user.password_hash, password):
             user.failed_login_count += 1
             if user.failed_login_count >= LOCKOUT_THRESHOLD:
                 user.locked_until = now + LOCKOUT_DURATION
@@ -107,17 +118,18 @@ async def authenticate(username: str, password: str, *, ip: str | None) -> User:
                         detail=f"{user.failed_login_count} failures",
                     )
                 )
-            s.add(s.merge(user))
             s.add(AuditEvent(action="login_fail", actor=user.username, ip=ip, detail="bad_password"))
-            raise _bad_creds()
-
-        # Success
-        user.failed_login_count = 0
-        user.locked_until = None
-        user.last_login_at = now
-        s.add(s.merge(user))
-        s.add(AuditEvent(action="login_ok", actor=user.username, ip=ip))
-        return user
+            error = _bad_creds()
+        else:
+            user.failed_login_count = 0
+            user.locked_until = None
+            user.last_login_at = now
+            s.add(AuditEvent(action="login_ok", actor=user.username, ip=ip))
+            user_out = user
+    if error is not None:
+        raise error
+    assert user_out is not None
+    return user_out
 
 
 async def create_session(user: User, *, ip: str | None, user_agent: str | None) -> str:
@@ -161,7 +173,8 @@ async def session_user(token: str | None) -> User | None:
         ).scalar_one_or_none()
         if not sess:
             return None
-        if sess.expires_at < datetime.now(UTC):
+        expires_at = _aware(sess.expires_at)
+        if expires_at is None or expires_at < datetime.now(UTC):
             await s.delete(sess)
             return None
         # Constant-time double-check (paranoia: defends against any cmp shortcut).

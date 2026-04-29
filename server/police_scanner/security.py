@@ -40,9 +40,13 @@ class SecureHeadersMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         response = await call_next(request)
         # Vue 3 from CDN — explicitly allow jsDelivr; everything else self-hosted.
+        # 'unsafe-eval' is required because Vue 3's runtime-template build evaluates
+        # template strings via Function(). Eliminating it would require a Vite build
+        # pipeline; we accept the tradeoff for the no-build deploy. We do NOT permit
+        # 'unsafe-inline' for scripts — every script is served from /static.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' https://cdn.jsdelivr.net; "
+            "script-src 'self' 'unsafe-eval'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; "
             "media-src 'self'; "
@@ -58,8 +62,9 @@ class SecureHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
-        # Suppress server fingerprinting.
-        response.headers.pop("server", None)
+        # Suppress server fingerprinting (MutableHeaders has __delitem__ but no .pop).
+        if "server" in response.headers:
+            del response.headers["server"]
         return response
 
 

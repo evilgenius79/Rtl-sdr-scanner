@@ -1,4 +1,4 @@
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from '/static/js/vendor/vue.esm-browser.prod.js';
 import { api } from '../api.js';
 
 export default {
