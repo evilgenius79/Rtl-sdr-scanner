@@ -34,10 +34,24 @@ apt_install() {
   log "Installing apt dependencies..."
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
+
+  # GNU Radio's osmosdr binding is ABI-versioned in Debian (e.g.
+  # libgnuradio-osmosdr0.2.0 on Bookworm, possibly different on Trixie).
+  # Detect whatever version is actually packaged so this works on both.
+  local gr_osmosdr_lib
+  gr_osmosdr_lib=$(apt-cache search --names-only '^libgnuradio-osmosdr[0-9]' \
+                   | awk '{print $1}' | sort -V | tail -n1)
+  if [[ -z $gr_osmosdr_lib ]]; then
+    warn "No libgnuradio-osmosdr* package found in apt; relying on gr-osmosdr deps to pull it in."
+    gr_osmosdr_lib=""
+  else
+    log "Using $gr_osmosdr_lib"
+  fi
+
   apt-get install -y --no-install-recommends \
     build-essential cmake git pkg-config \
     libusb-1.0-0-dev libssl-dev \
-    gnuradio-dev gr-osmosdr libgnuradio-osmosdr0.2.0 \
+    gnuradio-dev gr-osmosdr ${gr_osmosdr_lib} \
     libboost-all-dev libgmp-dev liborc-0.4-dev \
     libcppunit-dev swig \
     fdkaac sox ffmpeg \
