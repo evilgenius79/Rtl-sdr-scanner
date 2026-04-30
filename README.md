@@ -118,11 +118,70 @@ Two systemd units, totally decoupled:
 | 700/800 MHz public-safety antenna | Tuned ¼-wave ground-plane outperforms a wideband discone.          |
 | LMR-240 or LMR-400 coax        | RG-58 is OK only for runs ≤ 3 m.                                       |
 | 64 GB+ microSD or USB SSD      | A24h × 32 kbps Opus = ~340 MB/day worst-case; sized for retention.    |
+| Optional: NVMe M.2 (≥ 128 GB)  | Strongly preferred over SD. See below.                                |
+| Optional: Hailo-8 AI Kit (~26 TOPS) | Used for accelerated Whisper transcription. See below.           |
+
+### NVMe M.2 (recommended)
+
+If you're booting from an NVMe HAT instead of SD, two settings to confirm
+once before deploying:
+
+1. **Boot order** must put NVMe first:
+   ```bash
+   sudo raspi-config   # → Advanced Options → Boot Order → NVMe/USB Boot
+   ```
+2. **PCIe Gen 3** for free perf (HAT permitting):
+   ```bash
+   echo "dtparam=pciex1_gen=3" | sudo tee -a /boot/firmware/config.txt
+   sudo reboot
+   ```
+
+With ≥ 128 GB available, recordings storage stops being a constraint:
+typical scanner duty cycles produce **3–4 GB/month** at 32 kbps M4A, so
+you can comfortably set `RECORDING_RETENTION_DAYS=180` (or `0` for never)
+in `/etc/police-scanner/env` and still have years of headroom. SQLite WAL
+journaling also benefits significantly — random writes that would crawl
+on SD run at full SSD speed. Filesystem: ext4 is the right call at this
+size (no btrfs/ZFS overhead needed).
+
+### Hailo-8 NPU (optional, for Whisper)
+
+The Pi 5 AI Kit's Hailo-8 (~26 TOPS) is genuinely useful here, but only
+for one specific thing: **Whisper transcription acceleration**. CPU-only
+Whisper-tiny on the Pi 5 manages ~1–2× real-time; on Hailo it should run
+~10–20× real-time, so a 30-second call gets transcribed in ~2 seconds and
+becomes searchable in the recordings library essentially as it ends.
+
+Integration is **not in v1** — left as a follow-up commit because the
+Hailo SDK install is much easier to get right with the actual hardware in
+front of you. When ready:
+
+1. `sudo apt install hailo-all` (Hailo's apt repo provides the driver +
+   `hailo-platform` Python bindings).
+2. Pull a pre-converted `.hef` Whisper model from the
+   [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo).
+3. Replace the stub `transcribe.py` worker with a Hailo inference loop
+   (~200 lines) that watches the `Call` table for rows with
+   `transcript_status='pending'`, transcribes the audio, and writes the
+   text back. The DB column and env-var hook (`WHISPER_MODEL_PATH`) are
+   already in place.
+
+What the NPU **isn't** good for:
+
+- **Trunked decoding (P25/DMR demod)** — that's complex-baseband DSP, not
+  tensor math. The CPU-based GNU Radio chain in trunk-recorder is the
+  right tool.
+- **Encryption breaking** — AES is computationally hard, not a tensor
+  problem. (Encrypted talkgroups stay flagged + hidden.)
+
+Future-but-realistic NPU uses if you want them later: voice activity
+detection to drop mic-keyup-no-speech calls, audio event classification
+(gunshot/siren/keyword spotting) tied into push-notification rules.
 
 ## Quick install (Raspberry Pi OS Bookworm 64-bit)
 
 ```bash
-git clone https://github.com/<you>/Rtl-sdr-scanner.git
+git clone https://github.com/evilgenius79/Rtl-sdr-scanner.git
 cd Rtl-sdr-scanner
 sudo ./scripts/install-pi.sh
 ```
