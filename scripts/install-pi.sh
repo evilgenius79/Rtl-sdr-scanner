@@ -129,7 +129,8 @@ build_trunk_recorder() {
 
 build_mqtt_plugin() {
   log "Building MQTT status plugin for trunk-recorder..."
-  apt-get install -y --no-install-recommends libmosquitto-dev
+  # Plugin uses Eclipse Paho (C + C++ wrapper), NOT Mosquitto.
+  apt-get install -y --no-install-recommends libpaho-mqtt-dev libpaho-mqttpp-dev
   mkdir -p "$(dirname "$MQTT_PLUGIN_BUILD_DIR")"
   if [[ ! -d $MQTT_PLUGIN_BUILD_DIR/.git ]]; then
     git clone --depth=1 https://github.com/TrunkRecorder/trunk-recorder-mqtt-status.git "$MQTT_PLUGIN_BUILD_DIR"
