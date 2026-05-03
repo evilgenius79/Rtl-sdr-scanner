@@ -50,7 +50,8 @@ apt_install() {
 
   apt-get install -y --no-install-recommends \
     build-essential cmake git pkg-config \
-    libusb-1.0-0-dev libssl-dev \
+    libusb-1.0-0-dev libssl-dev libcurl4-openssl-dev \
+    liblog4cpp5-dev libpcap-dev libsndfile1-dev \
     gnuradio-dev gr-osmosdr ${gr_osmosdr_lib} \
     libboost-all-dev libgmp-dev liborc-0.4-dev \
     libcppunit-dev swig \
