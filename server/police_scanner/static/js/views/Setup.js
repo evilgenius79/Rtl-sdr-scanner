@@ -143,10 +143,13 @@ export default {
         <label><input type="checkbox" v-model="state.includeConventional" /> Include conventional VHF/UHF channels (uses SDR 3)</label>
 
         <h3>SDR serials</h3>
-        <p class="muted" style="font-size:0.85rem">Defaults match flash-sdr-serials.sh.</p>
-        <input v-model="state.dongleSerials[0]" maxlength="8" /> control_low &nbsp;
-        <input v-model="state.dongleSerials[1]" maxlength="8" /> voice_high &nbsp;
-        <input v-model="state.dongleSerials[2]" maxlength="8" /> conventional
+        <p class="muted" style="font-size:0.85rem">
+          Defaults match flash-sdr-serials.sh. Leave a slot blank if you don't have that dongle yet —
+          2 dongles run trunked-only (no conventional), 3 give you both.
+        </p>
+        <input v-model="state.dongleSerials[0]" maxlength="8" placeholder="00000101" /> control_low &nbsp;
+        <input v-model="state.dongleSerials[1]" maxlength="8" placeholder="00000102" /> voice_high &nbsp;
+        <input v-model="state.dongleSerials[2]" maxlength="8" placeholder="(blank = skip)" /> conventional
 
         <div style="margin-top:1.5rem">
           <button class="primary" :disabled="state.loading" @click="apply">

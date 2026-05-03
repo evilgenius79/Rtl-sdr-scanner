@@ -104,8 +104,10 @@ class SetupApply(BaseModel):
     selected_categories: list[str] = []
     include_conventional: bool = True
     hide_encrypted: bool = True
+    # 2 dongles = trunked-only (no conventional). 3 = trunked + conventional.
+    # 4+ = additional conventional or sidecar use. Empty strings filtered server-side.
     dongle_serials: list[str] = Field(
-        default=["00000101", "00000102", "00000103"], min_length=3, max_length=3
+        default=["00000101", "00000102", "00000103"], min_length=1, max_length=8
     )
 
 
@@ -241,16 +243,37 @@ async def apply(
         channels_files["conv"] = ch_path
         conventional_freqs_hz = [c.frequency_hz for c in county.conventional if c.frequency_hz]
 
-    # Validate dongle serials are exactly 8 hex/digits
-    for serial in payload.dongle_serials:
+    # Drop blank entries from the UI, then validate the rest are 8 hex/digits.
+    serials = [s.strip() for s in payload.dongle_serials if s and s.strip()]
+    for serial in serials:
         if not re.fullmatch(r"[0-9A-Fa-f]{8}", serial):
             raise HTTPException(status_code=400, detail=f"Invalid dongle serial: {serial!r}")
 
-    dongles = [
-        DongleSpec(serial=payload.dongle_serials[0], role="control_low"),
-        DongleSpec(serial=payload.dongle_serials[1], role="voice_high"),
-        DongleSpec(serial=payload.dongle_serials[2], role="conventional"),
-    ]
+    if not serials:
+        raise HTTPException(status_code=400, detail="At least one dongle serial is required.")
+    if len(serials) != len(set(serials)):
+        raise HTTPException(status_code=400, detail="Dongle serials must be unique.")
+
+    # Role assignment by count:
+    #   1 dongle  → control_low (narrow trunked sites only, no conventional)
+    #   2 dongles → control_low + voice_high (full trunked, no conventional)
+    #   3 dongles → + conventional (the original layout)
+    #   4+        → extra dongles tagged 'conventional2', 'conventional3'… for future use
+    role_for = ["control_low", "voice_high", "conventional"]
+    dongles = []
+    for i, serial in enumerate(serials):
+        if i < len(role_for):
+            role = role_for[i]
+        else:
+            role = f"conventional{i - 1}"
+        dongles.append(DongleSpec(serial=serial, role=role))
+
+    # Refuse a config that asks for conventional but doesn't have a dongle for it.
+    if conventional_freqs_hz and not any(d.role == "conventional" for d in dongles):
+        # Quietly drop the conventional system instead of failing — user will see
+        # "0 conventional channels" in the response and can re-run with more dongles.
+        conventional_freqs_hz = []
+        channels_files = {}
 
     config = render_config(
         p25_systems=p25_for_config,
