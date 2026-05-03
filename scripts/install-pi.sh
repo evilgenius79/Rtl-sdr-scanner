@@ -15,7 +15,6 @@ SERVICE_USER="scanner"
 DATA_DIR="/var/lib/police-scanner"
 TR_BUILD_DIR="/opt/build/trunk-recorder"
 LIBRTLSDR_BUILD_DIR="/opt/build/librtlsdr-blog"
-MQTT_PLUGIN_BUILD_DIR="/opt/build/tr-plugin-mqtt"
 
 log() { printf '\033[1;36m[install]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
@@ -118,29 +117,25 @@ build_trunk_recorder() {
   else
     git -C "$TR_BUILD_DIR" pull --ff-only
   fi
+
+  # Drop the MQTT plugin source into trunk-recorder's user_plugins/ directory
+  # BEFORE we run cmake. trunk-recorder's top-level CMakeLists auto-discovers
+  # subdirs of user_plugins/ and builds them in-tree, which is the only layout
+  # the plugin's relative #include "../../trunk-recorder/source.h" resolves to.
+  apt-get install -y --no-install-recommends libpaho-mqtt-dev libpaho-mqttpp-dev
+  install -d -m 0755 "$TR_BUILD_DIR/user_plugins"
+  local mqtt_plugin_dir="$TR_BUILD_DIR/user_plugins/tr-plugin-mqtt"
+  if [[ ! -d $mqtt_plugin_dir/.git ]]; then
+    log "Cloning MQTT status plugin into user_plugins/..."
+    git clone --depth=1 https://github.com/TrunkRecorder/trunk-recorder-mqtt-status.git "$mqtt_plugin_dir"
+  else
+    git -C "$mqtt_plugin_dir" pull --ff-only
+  fi
+
   rm -rf "$TR_BUILD_DIR/build"
   mkdir -p "$TR_BUILD_DIR/build"
   pushd "$TR_BUILD_DIR/build" >/dev/null
   cmake .. -DCMAKE_BUILD_TYPE=Release
-  make -j"$(nproc)"
-  make install
-  popd >/dev/null
-}
-
-build_mqtt_plugin() {
-  log "Building MQTT status plugin for trunk-recorder..."
-  # Plugin uses Eclipse Paho (C + C++ wrapper), NOT Mosquitto.
-  apt-get install -y --no-install-recommends libpaho-mqtt-dev libpaho-mqttpp-dev
-  mkdir -p "$(dirname "$MQTT_PLUGIN_BUILD_DIR")"
-  if [[ ! -d $MQTT_PLUGIN_BUILD_DIR/.git ]]; then
-    git clone --depth=1 https://github.com/TrunkRecorder/trunk-recorder-mqtt-status.git "$MQTT_PLUGIN_BUILD_DIR"
-  else
-    git -C "$MQTT_PLUGIN_BUILD_DIR" pull --ff-only
-  fi
-  rm -rf "$MQTT_PLUGIN_BUILD_DIR/build"
-  mkdir -p "$MQTT_PLUGIN_BUILD_DIR/build"
-  pushd "$MQTT_PLUGIN_BUILD_DIR/build" >/dev/null
-  cmake ..
   make -j"$(nproc)"
   make install
   popd >/dev/null
@@ -251,7 +246,6 @@ main() {
   blacklist_dvb
   build_librtlsdr_blog
   build_trunk_recorder
-  build_mqtt_plugin
   create_user_and_dirs
   install_python_app
   install_env_file
