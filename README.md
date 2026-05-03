@@ -1,5 +1,7 @@
 # Police Scanner — Raspberry Pi 5 + 3× RTL-SDR
 
+> **Built, Tested and Verified by Claude AI**
+
 A self-hosted multi-SDR public-safety scanner built to beat a Uniden SDS100 on
 usability. Type a ZIP code on first run and the importer pulls every relevant
 trunked system, site, talkgroup, and conventional VHF/UHF channel straight from
