@@ -217,7 +217,13 @@ config can name them by role rather than USB port.
    RR_PASSWORD=<your RR password>
    SCANNER_ADMIN_PASSWORD=<pick a strong one>
    SCANNER_PUBLIC_URL=https://scanner.example.com   # or http://raspberrypi.local:8080
+   # For LAN-only first-run testing (NOT public exposure), also set:
+   SCANNER_HOST=0.0.0.0
    ```
+   `SCANNER_HOST` defaults to `127.0.0.1` (loopback only) so it's safe to
+   leave alone if you're running nginx in front. For LAN-only testing
+   without nginx, change to `0.0.0.0` so other devices on your network
+   can reach the UI.
 2. Start the web app: `sudo systemctl enable --now police-scanner.service`
 3. Browse to the URL → log in as `admin` with the password you set.
 4. Click **Setup**, type your ZIP code, look up.
@@ -317,6 +323,132 @@ du -sh /var/lib/police-scanner/recordings/
 # Audit log (every login attempt, lockout, setup change)
 sqlite3 /var/lib/police-scanner/db.sqlite \
   'SELECT at, actor, ip, action, detail FROM auditevent ORDER BY at DESC LIMIT 50'
+```
+
+### Optional: desktop status monitor
+
+If your Pi is set up with a desktop session, you can install a one-window
+"glance pane" that opens at login showing service state, dongle enumeration,
+the LAN IP, and live logs:
+
+```bash
+./scripts/install-desktop-monitor.sh    # run as your normal user, NOT root
+```
+
+That drops a `.desktop` autostart file in `~/.config/autostart/` and a
+re-runnable status script at `~/.local/bin/scanner-monitor.sh`. Re-run
+anytime to refresh the snapshot without rebooting.
+
+## Troubleshooting
+
+### "I can't reach the web UI from another device on my network"
+
+Check `SCANNER_HOST` in `/etc/police-scanner/env`. The default is
+`127.0.0.1` (loopback only), which is correct if you're using nginx in
+front but means **only the Pi itself can reach the UI**. For LAN testing
+without nginx, set `SCANNER_HOST=0.0.0.0` and restart:
+
+```bash
+sudo systemctl restart police-scanner.service
+hostname -I              # shows the Pi's LAN IPs; browse to http://<that-ip>:8080
+sudo ss -tlnp | grep 8080  # confirm uvicorn is actually listening on 8080
+```
+
+### "Dongles flash to 00000101 the first time but won't flash 00000102 the next"
+
+There's a 1-2 second window after replug where the kernel hasn't
+enumerated the device yet. The flash script handles this by polling
+`lsusb`, but if you replug before the previous dongle has fully released,
+the new one looks like the old one. Always:
+
+1. Unplug the dongle.
+2. Wait at least 2 seconds.
+3. Plug the next dongle in firmly.
+4. Wait for the script's "Detected dongle with current serial: …" line —
+   if it shows `00000101` instead of the factory default, you've still
+   got the old dongle plugged in. Type Ctrl-C, unplug, try again.
+
+The factory default for RTL-SDR Blog v4 is usually `00000001`.
+
+### "trunk-recorder runs but Control Channel Message Decode Rate stays 0/sec"
+
+The decoder is tuned to a frequency where it can't hear (or there's no
+P25 traffic to decode). Diagnose with a 30-second spectrum scan:
+
+```bash
+sudo systemctl stop trunk-recorder.service
+rtl_power -d 0 -f 850M:860M:10k -g 40 -i 1 -e 30 /tmp/scan800.csv
+rtl_power -d 0 -f 769M:776M:10k -g 40 -i 1 -e 30 /tmp/scan700.csv
+echo "=== 850-860 MHz ==="
+sort -t, -k7 -n -r /tmp/scan800.csv | awk -F, '{printf "%.4f MHz  %.1f dBm\n",$3/1e6,$7}' | head -10
+echo "=== 769-776 MHz ==="
+sort -t, -k7 -n -r /tmp/scan700.csv | awk -F, '{printf "%.4f MHz  %.1f dBm\n",$3/1e6,$7}' | head -10
+```
+
+What you'll see and what it means:
+
+- **Strong narrow constant peak** at the configured control-channel
+  frequency: site is active, decode failure is something else
+  (PPM error, weak RSSI, modulation mismatch).
+- **Strong narrow peak elsewhere in 850-855 MHz**: site moved to a
+  different control channel — update `CONTROL_CH` in your config or
+  re-run the Setup wizard.
+- **Strong narrow peak in 769-775 MHz**: site migrated to 700 MHz.
+  Indiana SAFE-T has been doing this for years. RR's free public
+  listings can be stale; the wizard pulls live data when you have
+  an API key.
+- **No strong peaks anywhere**: antenna mismatch, site too far away,
+  or you're scanning during a quiet period (control channels transmit
+  continuously, so this is unusual — scan again at a busier time of day).
+
+### "GNU Radio crashes with 'Permission denied [/home/scanner/.config/...]'"
+
+Fixed in current install. If you're seeing it on an older deploy:
+
+```bash
+sudo systemctl stop police-scanner trunk-recorder
+sudo usermod -d /var/lib/police-scanner scanner
+sudo install -d -o scanner -g scanner -m 0750 \
+    /var/lib/police-scanner/.config \
+    /var/lib/police-scanner/.config/gnuradio \
+    /var/lib/police-scanner/.cache
+sudo systemctl start police-scanner trunk-recorder
+```
+
+The systemd unit also explicitly sets `HOME=/var/lib/police-scanner`,
+so this only matters if your unit file is older than commit `b3bb3ef`.
+
+### "Antenna picks up VHF fine but nothing on 700/800 MHz"
+
+A wideband discone covers both bands. A small "rubber duck" whip
+(what ships with most RTL-SDR kits) is tuned for ~150 MHz and is
+significantly less sensitive at 700-850 MHz. Options:
+1. Get a 700/800 MHz public-safety-band antenna (Nooelec, RTL-SDR Blog,
+   and others sell them tuned for the band).
+2. Use a discone or wideband scanner antenna outdoors with a low-loss
+   coax run.
+3. Even a wire cut to ~9 cm (¼-wave at 850 MHz) on a ground plane
+   outperforms the stock whip on that band.
+
+### "RadioReference site listings are stale"
+
+Several Hoosier SAFE-T sites have migrated from 800 MHz to 700 MHz
+over the last few years. RR's free public site listings can lag the
+actual deployment by months. If `rtl_power` shows no signal at the
+expected freq but a clear peak elsewhere, trust the spectrum, not RR.
+Once your RR API key arrives, the Setup wizard pulls live system
+data and reflects the current configuration.
+
+### "I want to disable everything on boot"
+
+```bash
+sudo systemctl disable police-scanner.service trunk-recorder.service
+```
+
+To re-enable later:
+
+```bash
+sudo systemctl enable police-scanner.service trunk-recorder.service
 ```
 
 ## Tests
