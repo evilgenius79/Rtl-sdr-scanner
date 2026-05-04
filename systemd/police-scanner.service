@@ -9,6 +9,18 @@ User=scanner
 Group=scanner
 WorkingDirectory=/opt/police-scanner
 EnvironmentFile=/etc/police-scanner/env
+# Force HOME/XDG into the data dir so anything that writes to ~ lands in
+# our writable area instead of /home (which is locked by ProtectHome).
+Environment=HOME=/var/lib/police-scanner
+Environment=XDG_CONFIG_HOME=/var/lib/police-scanner/.config
+Environment=XDG_CACHE_HOME=/var/lib/police-scanner/.cache
+# systemd creates /run/police-scanner on start, removes it on stop. Used
+# for any short-lived runtime files (currently nothing, but available).
+RuntimeDirectory=police-scanner
+RuntimeDirectoryMode=0750
+# Persistent state. systemd creates this if missing too (matches install-pi.sh).
+StateDirectory=police-scanner
+StateDirectoryMode=0750
 ExecStart=/opt/police-scanner/.venv/bin/uvicorn \
     police_scanner.main:app \
     --host ${SCANNER_HOST} \
@@ -24,7 +36,7 @@ TimeoutStopSec=15
 # Hardening — see systemd.exec(5)
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=tmpfs
 PrivateTmp=true
 PrivateDevices=false
 ProtectControlGroups=true
@@ -44,8 +56,10 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources @reboot @swap @debug @mount @cpu-emulation @obsolete
 
-# State directories (auto-created with correct ownership)
-ReadWritePaths=/var/lib/police-scanner /run/police-scanner
+# State directories. RuntimeDirectory/StateDirectory above already grant rw
+# access to /run/police-scanner and /var/lib/police-scanner; this line is
+# redundant but kept for clarity in case StateDirectory= is ever removed.
+ReadWritePaths=/var/lib/police-scanner
 
 # Allow controlling trunk-recorder unit only.
 # Use polkit rule (see scripts/install-pi.sh) for unprivileged systemctl.
