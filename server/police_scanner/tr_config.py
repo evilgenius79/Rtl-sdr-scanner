@@ -269,16 +269,20 @@ def write_talkgroups_csv(path: Path, talkgroups) -> None:
 def write_channels_csv(path: Path, channels) -> None:
     """trunk-recorder conventional channelFile CSV.
 
-    Required columns per trunk-recorder: 'TG Number', 'Frequency'.
-    Optional: 'Alpha Tag', 'Tone', 'Mode', 'Description', 'Category', 'Tag', etc.
-    Note 'Alpha Tag' (with space) — 'Alpha' alone is rejected.
+    Required columns: 'TG Number', 'Frequency'.
+    Optional: 'Alpha Tag', 'Tone', 'Description', 'Category', 'Tag', 'Enable',
+              'Comment', 'Signal Detector', 'Squelch'.
 
-    We synthesize TG Numbers starting at 9001 so they don't collide with real
-    P25 talkgroup IDs (which typically live below 9000 in regional systems).
+    Notes:
+    - 'Alpha Tag' (with space) — 'Alpha' alone is rejected.
+    - There is NO per-channel 'Mode' column. Modulation is set at the system
+      level via type='conventional' (analog FM) or 'conventionalP25' / etc.
+      A 'Mode' column gives "Unknown column header: Mode".
+    - TG Numbers start at 9001 to avoid colliding with real P25 talkgroup IDs.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
-        f.write("TG Number,Frequency,Alpha Tag,Description,Tone,Mode\n")
+        f.write("TG Number,Frequency,Alpha Tag,Description,Tone\n")
         for i, c in enumerate(channels, start=9001):
             f.write(
                 ",".join(
@@ -288,7 +292,6 @@ def write_channels_csv(path: Path, channels) -> None:
                         _csv_escape(c.alpha),
                         _csv_escape(c.description),
                         _csv_escape(c.tone),
-                        _csv_escape(c.mode),
                     ]
                 )
                 + "\n"

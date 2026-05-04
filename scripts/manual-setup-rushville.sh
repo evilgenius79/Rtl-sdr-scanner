@@ -52,20 +52,22 @@ CSV
 chown scanner:scanner "$TG_CSV"
 
 # Conventional VHF channels (verified from RR free site listings + FCC ULS).
-# trunk-recorder's channel CSV format requires a 'TG Number' first column —
-# it tags each conventional call with that synthetic ID so the recorder pipeline
-# can treat it like a talkgroup. We use 9001+ to stay clear of real TGIDs.
+# trunk-recorder channel-CSV schema: 'TG Number' + 'Frequency' required.
+# Modulation is set at the SYSTEM level ('type: conventional' = analog FM),
+# NOT in the channel CSV — a per-channel 'Mode' column is rejected with
+# "Unknown column header: Mode". TG Numbers start at 9001 to stay clear of
+# real P25 talkgroup IDs.
 cat > "$CH_CSV" <<'CSV'
-TG Number,Frequency,Alpha Tag,Description,Tone,Mode
-9001,155.625000,RushSO Disp,Rush Sheriff Dispatch,179.9 PL,FMN
-9002,158.820000,Rush LE,Sheriff & Rushville Police shared,,FMN
-9003,155.190000,Rushvl PD,Rushville Police Dispatch,131.8 PL,FMN
-9004,154.355000,Rush FD/EMS,Rush County Fire/EMS Dispatch,131.8 PL,FMN
-9005,154.160000,Rush FG,Rush County Fireground,,FMN
-9006,156.195000,Rushvl Fire,Rushville Fire/EMS Dispatch,131.8 PL,FMN
-9007,154.415000,Rushvl FG,Rushville Fireground,,FMN
-9008,154.265000,RushTwp FG1,Rushville Township Fireground 1,,FMN
-9009,159.360000,RushTwp FG2,Rushville Township Fireground 2,,FMN
+TG Number,Frequency,Alpha Tag,Description,Tone
+9001,155.625000,RushSO Disp,Rush Sheriff Dispatch,179.9 PL
+9002,158.820000,Rush LE,Sheriff & Rushville Police shared,
+9003,155.190000,Rushvl PD,Rushville Police Dispatch,131.8 PL
+9004,154.355000,Rush FD/EMS,Rush County Fire/EMS Dispatch,131.8 PL
+9005,154.160000,Rush FG,Rush County Fireground,
+9006,156.195000,Rushvl Fire,Rushville Fire/EMS Dispatch,131.8 PL
+9007,154.415000,Rushvl FG,Rushville Fireground,
+9008,154.265000,RushTwp FG1,Rushville Township Fireground 1,
+9009,159.360000,RushTwp FG2,Rushville Township Fireground 2,
 CSV
 chown scanner:scanner "$CH_CSV"
 
