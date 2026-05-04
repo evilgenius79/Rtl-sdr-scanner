@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
-# Manual SAFE-T setup for Rushville/Henry County area.
+# Manual SAFE-T setup for the area around ZIP 46173 (Rushville, Rush County, IN).
 #
 # Use this to test the scanner BEFORE your RadioReference API key arrives.
 # Drops a hand-crafted trunk-recorder config that decodes the Project Hoosier
-# SAFE-T site closest to ZIP 46173 (Knightstown, Site 094). trunk-recorder
-# will auto-discover voice channels from the control channel — calls will
-# appear in the Live view as raw TGIDs (e.g. "TG 10101") with no friendly
-# alpha tags until you re-run the Setup wizard with RR creds.
+# SAFE-T Knightstown site (Site 094, ~25 miles NORTH of Rushville in Henry
+# County). This is the only nearby SAFE-T site I have verified frequencies
+# for without an RR API call — Rushville's actually-closest site (probably
+# Greensburg, Shelbyville, or Connersville) may give better reception once
+# you can query RR for the full site list.
+#
+# Reception caveat: 25 miles at 700 MHz needs a decent antenna and reasonable
+# line-of-sight. If trunk-recorder can't lock onto the control channel from
+# your location, that's why — wait for the RR key and let the wizard pick a
+# closer site. Or, if you happen to have the actual nearest site's control-
+# channel frequency from a SAFE-T radio scanner app, edit CONTROL_CH below.
+#
+# trunk-recorder will auto-discover voice channels from the control channel —
+# calls will appear in the Live view as raw TGIDs (e.g. "TG 10101") with no
+# friendly alpha tags until you re-run the Setup wizard with RR creds.
 set -Eeuo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -122,6 +133,13 @@ Manual SAFE-T config written to:
   $CONFIG
   $TG_CSV  (empty — calls will show as raw TGIDs)
 
+Pointing at: SAFE-T Knightstown Site 094, control channel 774.68125 MHz.
+That site is ~25 miles NORTH of Rushville (in Henry County), so reception
+quality depends on your antenna + terrain. If the control channel won't
+decode, the actual nearest Rush County SAFE-T site is probably Greensburg,
+Shelbyville, or Connersville — wait for your RR API key and let the Setup
+wizard pick the right one.
+
 Next:
   sudo systemctl restart trunk-recorder.service
   sudo journalctl -u trunk-recorder -f
@@ -129,11 +147,11 @@ Next:
 In the trunk-recorder log you should see (within ~30 s):
   • "Decoding control channel"
   • "Trunked System: ... WACN: ..."
-  • Call event lines as Sheriff/Fire/EMS keys up
+  • Call event lines as units key up
 
 Browse to the police-scanner web UI Live view — calls will appear as
 "TG <number>" with no friendly names. When your RadioReference API key
 arrives, run the Setup wizard with ZIP 46173 to overwrite this config
-with the proper alpha tags.
+with the proper site + alpha tags.
 ────────────────────────────────────────────────────────
 EOF
