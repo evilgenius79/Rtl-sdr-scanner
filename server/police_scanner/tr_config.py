@@ -236,13 +236,17 @@ def render_config(
 
 
 def write_talkgroups_csv(path: Path, talkgroups) -> None:
-    """trunk-recorder reads talkgroups as CSV (no header).
+    """trunk-recorder reads talkgroups as CSV with a header row.
 
-    Columns: Decimal,Hex,Mode,Alpha,Description,Tag,Group,Priority
+    Columns the recorder accepts (verified against tr's column-header parser):
+        Required: Decimal, Mode, Description
+        Optional: Alpha Tag, Hex, Category, Tag, Priority, Preferred NAC
+    Note: the category column MUST be named 'Category' (not 'Group') — tr
+    rejects the latter with "Unknown column header: Group".
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
-        f.write("Decimal,Hex,Mode,Alpha Tag,Description,Tag,Group,Priority\n")
+        f.write("Decimal,Hex,Mode,Alpha Tag,Description,Tag,Category,Priority\n")
         for tg in talkgroups:
             mode = tg.mode if tg.mode else "D"
             f.write(

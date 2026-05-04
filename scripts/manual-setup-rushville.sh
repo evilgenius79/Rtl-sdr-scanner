@@ -43,8 +43,11 @@ install -d -o scanner -g scanner -m 0750 \
   "$TR_DIR" "$TR_DIR/talkgroups" "$TR_DIR/channels" "$TR_DIR/captures" "$TR_DIR/logs"
 
 # Empty talkgroups CSV — calls render as raw TGIDs until the RR import runs.
+# Columns must match trunk-recorder's expected schema: Decimal/Hex/Mode are
+# required, the rest optional. Note the column is "Category", not "Group" —
+# trunk-recorder rejects "Group" with an "Unknown column header" error.
 cat > "$TG_CSV" <<'CSV'
-Decimal,Hex,Mode,Alpha Tag,Description,Tag,Group,Priority
+Decimal,Hex,Mode,Alpha Tag,Description,Tag,Category,Priority
 CSV
 chown scanner:scanner "$TG_CSV"
 
