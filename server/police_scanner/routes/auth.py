@@ -20,6 +20,7 @@ from ..security import (
     issue_csrf_token,
     require_csrf,
 )
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 

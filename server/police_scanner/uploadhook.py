@@ -52,6 +52,7 @@ def _post(url: str, secret: str, audio_path: Path, meta: dict) -> None:
         },
     )
     try:
+        # nosec B310 — URL host validated to be loopback above; secret-authenticated.
         with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
             resp.read()
     except urllib.error.HTTPError as exc:
