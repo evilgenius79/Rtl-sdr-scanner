@@ -146,18 +146,31 @@ create_user_and_dirs() {
   if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
     log "Creating system user '$SERVICE_USER'..."
     useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin --user-group "$SERVICE_USER"
-    # Allow access to USB SDRs (group created by udev rules).
-    if getent group plugdev >/dev/null; then
-      usermod -aG plugdev "$SERVICE_USER"
-    fi
   fi
+
+  # Make sure the home dir is correct even if the user existed already.
+  local current_home
+  current_home=$(getent passwd "$SERVICE_USER" | cut -d: -f6)
+  if [[ "$current_home" != "$DATA_DIR" ]]; then
+    log "Fixing $SERVICE_USER home dir: $current_home → $DATA_DIR"
+    usermod -d "$DATA_DIR" "$SERVICE_USER"
+  fi
+
+  if getent group plugdev >/dev/null; then
+    usermod -aG plugdev "$SERVICE_USER"
+  fi
+
   install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 \
     "$DATA_DIR" \
     "$DATA_DIR/recordings" \
     "$DATA_DIR/trunk-recorder" \
     "$DATA_DIR/trunk-recorder/captures" \
     "$DATA_DIR/trunk-recorder/talkgroups" \
-    "$DATA_DIR/trunk-recorder/logs"
+    "$DATA_DIR/trunk-recorder/channels" \
+    "$DATA_DIR/trunk-recorder/logs" \
+    "$DATA_DIR/.config" \
+    "$DATA_DIR/.config/gnuradio" \
+    "$DATA_DIR/.cache"
 }
 
 install_python_app() {
@@ -207,6 +220,12 @@ install_systemd_units() {
   systemctl daemon-reload
   systemctl enable mosquitto.service
   systemctl restart mosquitto.service
+  # Enable both scanner units at boot. police-scanner won't start without a
+  # valid env file; trunk-recorder won't start until a config.json exists
+  # (ConditionPathExists guard inside the unit). Both fail-safe.
+  systemctl enable police-scanner.service
+  systemctl enable trunk-recorder.service
+  log "Both services are now enabled at boot."
   log "Run: sudo systemctl start police-scanner.service"
   log "And: sudo systemctl start trunk-recorder.service  (after first-run setup writes its config)"
 }

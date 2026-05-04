@@ -10,6 +10,11 @@ User=scanner
 Group=scanner
 SupplementaryGroups=plugdev
 EnvironmentFile=/etc/police-scanner/env
+# Force HOME / XDG paths into our state dir so GNU Radio's config writes land
+# somewhere we actually allow writes (and survive restarts).
+Environment=HOME=/var/lib/police-scanner
+Environment=XDG_CONFIG_HOME=/var/lib/police-scanner/.config
+Environment=XDG_CACHE_HOME=/var/lib/police-scanner/.cache
 WorkingDirectory=/var/lib/police-scanner/trunk-recorder
 ExecStart=/usr/local/bin/trunk-recorder --config=/var/lib/police-scanner/trunk-recorder/config.json
 Restart=on-failure
@@ -17,10 +22,12 @@ RestartSec=5
 TimeoutStopSec=15
 LimitNOFILE=65536
 
-# Hardening
+# Hardening — ProtectHome=tmpfs gives an empty writable tmpfs at /home so GNU
+# Radio config writes to ~/.config/gnuradio don't fail, but the data is
+# ephemeral. Persistent config + state lives under ReadWritePaths below.
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=tmpfs
 PrivateTmp=true
 ProtectControlGroups=true
 ProtectKernelModules=true
