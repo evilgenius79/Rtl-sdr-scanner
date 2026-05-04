@@ -5,7 +5,9 @@
 # check without SSHing in.
 #
 # Run this AS YOUR LOGIN USER (not root, not via sudo) — autostart files live
-# in your home directory.
+# in your home directory. The script will prompt once for sudo to add you to
+# the systemd-journal group (so the monitor's `journalctl -f` doesn't need
+# sudo each time you log in).
 set -Eeuo pipefail
 
 if [[ $EUID -eq 0 ]]; then
@@ -13,6 +15,20 @@ if [[ $EUID -eq 0 ]]; then
   echo "Run as your normal login user." >&2
   exit 1
 fi
+
+# ── Make `journalctl` work without sudo so the monitor doesn't pester you on
+#    every login. The systemd-journal and adm groups grant journal-read access
+#    on Debian-based systems. We also add 'adm' for belt-and-suspenders.
+needs_logout=0
+for grp in systemd-journal adm; do
+  if ! id -nG "$USER" | tr ' ' '\n' | grep -qx "$grp"; then
+    if getent group "$grp" >/dev/null; then
+      echo "Adding $USER to '$grp' group (one-time sudo prompt)..."
+      sudo usermod -aG "$grp" "$USER"
+      needs_logout=1
+    fi
+  fi
+done
 
 # Pick a terminal we know is installed. Order = preference.
 TERMINAL=""
@@ -70,7 +86,7 @@ printf '\n\033[1mDisk / recordings\033[0m\n'
 df -h /var/lib/police-scanner 2>/dev/null | tail -1 | awk '{printf "  free: %s of %s on %s\n", $4, $2, $6}' || true
 
 printf '\n\033[1;36m=== Live logs (Ctrl-C to quit) ===\033[0m\n'
-exec sudo journalctl -u police-scanner.service -u trunk-recorder.service -f --output=short
+exec journalctl -u police-scanner.service -u trunk-recorder.service -f --output=short
 INNER
 chmod +x "$MONITOR_SH"
 
@@ -98,9 +114,17 @@ To test now without rebooting:
 
 To remove autostart later:
   rm $DESKTOP_FILE
-
-Note: the monitor's log-tail uses sudo; you may be prompted for your password
-the first time, or set up passwordless sudo for journalctl if you want it
-truly hands-off. Example sudoers rule (run 'sudo visudo'):
-  $USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u police-scanner.service -u trunk-recorder.service -f *
 MSG
+
+if [[ $needs_logout -eq 1 ]]; then
+  cat <<MSG
+
+────────────────────────────────────────────────────────
+You were added to the systemd-journal group, but Linux only picks up new
+group memberships on a fresh login. To finish, do ONE of:
+  • Log out of the desktop and log back in (recommended)
+  • Reboot
+  • Or, just for this terminal session: 'newgrp systemd-journal'
+────────────────────────────────────────────────────────
+MSG
+fi
