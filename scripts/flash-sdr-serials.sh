@@ -14,6 +14,34 @@ if ! command -v rtl_eeprom >/dev/null; then
   echo "rtl_eeprom not found. Run install-pi.sh first." >&2
   exit 1
 fi
+if ! command -v lsusb >/dev/null; then
+  echo "lsusb not found. apt install usbutils" >&2
+  exit 1
+fi
+
+# Wait up to N seconds for exactly one Realtek RTL28xx device to appear on USB.
+# Returns 0 on success, 1 on timeout. The kernel can take 1-2 seconds to enumerate
+# a freshly-plugged dongle, and rtl_eeprom races against that — so we poll lsusb.
+wait_for_one_dongle() {
+  local timeout_sec=${1:-8}
+  local deadline=$(( $(date +%s) + timeout_sec ))
+  while (( $(date +%s) < deadline )); do
+    local count
+    count=$(lsusb | grep -cE '0bda:(2832|2838|283[0-9a-f])' || true)
+    if [[ $count -eq 1 ]]; then
+      # Give librtlsdr a moment to claim the device away from any kernel module.
+      sleep 1
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+current_serial() {
+  # Print the serial of the (single) attached dongle, or empty on failure.
+  rtl_eeprom 2>&1 | awk -F: '/Serial number:/ {gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}'
+}
 
 prompt_flash() {
   local serial=$1 name=$2
@@ -21,16 +49,44 @@ prompt_flash() {
   echo "──────────────────────────────────────────────"
   echo "Plug in ONLY the dongle that should become $name (serial $serial)."
   read -rp "Press Enter when ready, or Ctrl-C to abort: "
-  if ! rtl_eeprom 2>&1 | grep -q "Found 1 device"; then
-    echo "Expected exactly 1 dongle attached. Got:" >&2
-    rtl_eeprom 2>&1 | head -10 >&2
+
+  if ! wait_for_one_dongle 8; then
+    echo "Timed out waiting for exactly 1 RTL-SDR on USB. Currently detected:" >&2
+    lsusb | grep -E '0bda:283' >&2 || echo "  (none)" >&2
     exit 1
   fi
-  rtl_eeprom -s "$serial"
-  echo "Done. Unplug this dongle and replug to apply the new serial."
+
+  local before
+  before=$(current_serial || true)
+  echo "Detected dongle with current serial: ${before:-<unreadable>}"
+
+  if [[ "$before" == "$serial" ]]; then
+    echo "Dongle is already flashed to $serial — skipping."
+    return 0
+  fi
+
+  echo "Writing $serial..."
+  # rtl_eeprom -s prompts 'Write new configuration to device [y/n]?'.
+  # Auto-confirm with 'y'.
+  if ! printf 'y\n' | rtl_eeprom -s "$serial"; then
+    echo "rtl_eeprom write failed — see output above." >&2
+    exit 1
+  fi
+
+  echo
+  echo "Done. UNPLUG this dongle now, wait 2 seconds, then plug it back in."
   read -rp "Press Enter when you've replugged: "
-  if ! rtl_eeprom 2>&1 | grep -q "Serial number:.*$serial"; then
-    echo "Serial verification FAILED — check rtl_eeprom output above." >&2
+
+  if ! wait_for_one_dongle 8; then
+    echo "Timed out waiting for the dongle to come back after replug." >&2
+    exit 1
+  fi
+
+  local after
+  after=$(current_serial || true)
+  if [[ "$after" != "$serial" ]]; then
+    echo "Serial verification FAILED. Expected $serial, got: ${after:-<unreadable>}" >&2
+    rtl_eeprom 2>&1 | head -20 >&2
     exit 1
   fi
   echo "✓ $name now reports serial $serial."
