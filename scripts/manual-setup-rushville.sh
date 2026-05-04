@@ -1,23 +1,13 @@
 #!/usr/bin/env bash
-# Manual SAFE-T setup for the area around ZIP 46173 (Rushville, Rush County, IN).
+# Manual scanner setup for Rushville, Rush County IN (ZIP 46173).
 #
 # Use this to test the scanner BEFORE your RadioReference API key arrives.
-# Drops a hand-crafted trunk-recorder config that decodes the Project Hoosier
-# SAFE-T Knightstown site (Site 094, ~25 miles NORTH of Rushville in Henry
-# County). This is the only nearby SAFE-T site I have verified frequencies
-# for without an RR API call — Rushville's actually-closest site (probably
-# Greensburg, Shelbyville, or Connersville) may give better reception once
-# you can query RR for the full site list.
+# Decodes the actual Rushville SAFE-T site (Site 076, 800 MHz, 1.48 MHz span)
+# AND the local conventional VHF dispatch channels (Sheriff, Police, Fire/EMS).
 #
-# Reception caveat: 25 miles at 700 MHz needs a decent antenna and reasonable
-# line-of-sight. If trunk-recorder can't lock onto the control channel from
-# your location, that's why — wait for the RR key and let the wizard pick a
-# closer site. Or, if you happen to have the actual nearest site's control-
-# channel frequency from a SAFE-T radio scanner app, edit CONTROL_CH below.
-#
-# trunk-recorder will auto-discover voice channels from the control channel —
-# calls will appear in the Live view as raw TGIDs (e.g. "TG 10101") with no
-# friendly alpha tags until you re-run the Setup wizard with RR creds.
+# All frequencies sourced from RadioReference's free public site listings.
+# When the RR API key arrives, run the Setup wizard with ZIP 46173 to overwrite
+# this config with full talkgroup metadata (alpha tags, categories, units).
 set -Eeuo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -28,27 +18,50 @@ fi
 DATA_DIR="/var/lib/police-scanner"
 TR_DIR="$DATA_DIR/trunk-recorder"
 CONFIG="$TR_DIR/config.json"
-TG_CSV="$TR_DIR/talkgroups/safet_knightstown.csv"
+TG_CSV="$TR_DIR/talkgroups/safet_rushville.csv"
+CH_CSV="$TR_DIR/channels/conv_rush.csv"
 
-# SAFE-T Knightstown Site 094 control channel (verified via RadioReference DB)
-CONTROL_CH=774681250         # 774.68125 MHz × 1e6
+# ── SAFE-T Rushville Site 076 (RFSS 1) — 800 MHz band ──────────────────────
+# Control: 852.9625 MHz
+# Voice:   851.4875, 851.9625, 852.4625, 852.9625
+# Span:    851.4875 → 852.9625 = 1.48 MHz (fits in a single RTL-SDR window)
+SAFET_CONTROL=852962500
+SAFET_CENTER=852225000   # midpoint of 851.4875 and 852.9625
 
-# Two SDR centers to cover the ~4.86 MHz site span at 2.4 Msps:
-#   SDR 101: 771.0 MHz  → covers 770.0–772.0 MHz (low voice)
-#   SDR 102: 773.5 MHz  → covers 772.5–774.5 MHz + control at 774.68 (control + high voice)
-SDR_CTL_SERIAL="00000101"
-SDR_VOICE_SERIAL="00000102"
-SDR_CTL_CENTER=771000000
-SDR_VOICE_CENTER=773500000
+# ── Conventional VHF dispatch around Rushville ─────────────────────────────
+# Cluster sits in 154.16–156.20 MHz, fits in one ~2 MHz SDR window centered ~155.18.
+CONV_CENTER=155180000
 
-install -d -o scanner -g scanner -m 0750 "$TR_DIR" "$TR_DIR/talkgroups" "$TR_DIR/captures" "$TR_DIR/logs"
+# Dongle assignment:
+#   SDR-CTL    (00000101) = SAFE-T site (single-window, both control + voice)
+#   SDR-VOICE  (00000102) = idle (third dongle gets used for conventional)
+#   SDR-CONV   (00000103) = Rush County conventional VHF
+SAFET_SDR_SERIAL="00000101"
+CONV_SDR_SERIAL="00000103"
 
-# Empty-ish talkgroups CSV (just the header). trunk-recorder will accept this
-# and emit calls with TGID-only metadata until a real CSV replaces it.
+install -d -o scanner -g scanner -m 0750 \
+  "$TR_DIR" "$TR_DIR/talkgroups" "$TR_DIR/channels" "$TR_DIR/captures" "$TR_DIR/logs"
+
+# Empty talkgroups CSV — calls render as raw TGIDs until the RR import runs.
 cat > "$TG_CSV" <<'CSV'
 Decimal,Hex,Mode,Alpha Tag,Description,Tag,Group,Priority
 CSV
 chown scanner:scanner "$TG_CSV"
+
+# Conventional VHF channels (verified from RR free site listings + FCC ULS).
+cat > "$CH_CSV" <<'CSV'
+Frequency,Alpha,Description,Tone,Mode
+155.625000,RushSO Disp,Rush Sheriff Dispatch,179.9 PL,FMN
+158.820000,Rush LE,Sheriff & Rushville Police shared,,FMN
+155.190000,Rushvl PD,Rushville Police Dispatch,131.8 PL,FMN
+154.355000,Rush FD/EMS,Rush County Fire/EMS Dispatch,131.8 PL,FMN
+154.160000,Rush FG,Rush County Fireground,,FMN
+156.195000,Rushvl Fire,Rushville Fire/EMS Dispatch,131.8 PL,FMN
+154.415000,Rushvl FG,Rushville Fireground,,FMN
+154.265000,RushTwp FG1,Rushville Township Fireground 1,,FMN
+159.360000,RushTwp FG2,Rushville Township Fireground 2,,FMN
+CSV
+chown scanner:scanner "$CH_CSV"
 
 cat > "$CONFIG" <<JSON
 {
@@ -65,7 +78,7 @@ cat > "$CONFIG" <<JSON
   "instanceId": "police-scanner",
   "sources": [
     {
-      "center": $SDR_CTL_CENTER,
+      "center": $SAFET_CENTER,
       "rate": 2400000,
       "ppm": 0,
       "gain": 36,
@@ -73,26 +86,26 @@ cat > "$CONFIG" <<JSON
       "digitalRecorders": 4,
       "analogRecorders": 0,
       "driver": "osmosdr",
-      "device": "rtl=$SDR_CTL_SERIAL"
+      "device": "rtl=$SAFET_SDR_SERIAL"
     },
     {
-      "center": $SDR_VOICE_CENTER,
+      "center": $CONV_CENTER,
       "rate": 2400000,
       "ppm": 0,
       "gain": 36,
       "agc": false,
-      "digitalRecorders": 4,
-      "analogRecorders": 0,
+      "digitalRecorders": 0,
+      "analogRecorders": 4,
       "driver": "osmosdr",
-      "device": "rtl=$SDR_VOICE_SERIAL"
+      "device": "rtl=$CONV_SDR_SERIAL"
     }
   ],
   "systems": [
     {
-      "shortName": "safet_knightstown",
+      "shortName": "safet_rushville",
       "type": "p25",
       "modulation": "qpsk",
-      "control_channels": [$CONTROL_CH],
+      "control_channels": [$SAFET_CONTROL],
       "talkgroupsFile": "$TG_CSV",
       "talkgroupDisplayFormat": "id",
       "hideEncrypted": true,
@@ -104,6 +117,16 @@ cat > "$CONFIG" <<JSON
       "uploadScript": "$TR_DIR/uploadhook",
       "minDuration": 0,
       "minTransmissionDuration": 0
+    },
+    {
+      "shortName": "conv_rush",
+      "type": "conventional",
+      "channelFile": "$CH_CSV",
+      "audioArchive": true,
+      "callLog": true,
+      "uploadScript": "$TR_DIR/uploadhook",
+      "squelch": -55,
+      "deemphasisTau": 0.000750
     }
   ],
   "plugins": [
@@ -126,32 +149,44 @@ JSON
 chown scanner:scanner "$CONFIG"
 chmod 0640 "$CONFIG"
 
-cat <<EOF
+cat <<'EOF'
 
 ────────────────────────────────────────────────────────
-Manual SAFE-T config written to:
-  $CONFIG
-  $TG_CSV  (empty — calls will show as raw TGIDs)
+Manual config written for ZIP 46173 (Rushville, Rush County IN).
 
-Pointing at: SAFE-T Knightstown Site 094, control channel 774.68125 MHz.
-That site is ~25 miles NORTH of Rushville (in Henry County), so reception
-quality depends on your antenna + terrain. If the control channel won't
-decode, the actual nearest Rush County SAFE-T site is probably Greensburg,
-Shelbyville, or Connersville — wait for your RR API key and let the Setup
-wizard pick the right one.
+  Trunked: SAFE-T Site 076 (Rushville), 800 MHz
+           Control 852.9625 MHz, span 1.48 MHz
+           SDR 00000101 covers the whole site
+
+  Conventional (SDR 00000103, centered 155.18 MHz):
+    155.625  Rush Sheriff Disp
+    155.190  Rushville Police Disp
+    154.355  Rush Fire/EMS Disp
+    156.195  Rushville Fire/EMS Disp
+    154.160  Rush Fireground
+    154.415  Rushville Fireground
+    154.265  Rushville Township FG1
+    159.360  Rushville Township FG2
+    158.820  Sheriff/Rushville PD shared
+    (158.820 falls outside the 2 MHz window; will be uncovered)
+
+  SDR 00000102 sits idle — will get a job once you re-run the Setup
+  wizard (it can become a second SAFE-T window for site redundancy, or
+  cover school NXDN frequencies, etc.)
 
 Next:
   sudo systemctl restart trunk-recorder.service
   sudo journalctl -u trunk-recorder -f
 
-In the trunk-recorder log you should see (within ~30 s):
-  • "Decoding control channel"
-  • "Trunked System: ... WACN: ..."
+In the trunk-recorder log within ~30 s you should see:
+  • "Decoding control channel 852962500"
+  • "Trunked System: ... WACN: BEE00 SysID: 6BD"
+  • Conventional channel monitors active on the VHF freqs
   • Call event lines as units key up
 
-Browse to the police-scanner web UI Live view — calls will appear as
-"TG <number>" with no friendly names. When your RadioReference API key
-arrives, run the Setup wizard with ZIP 46173 to overwrite this config
-with the proper site + alpha tags.
+In the web UI Live view, trunked calls appear as "TG <number>"; conventional
+calls show their alpha tag (RushSO Disp, etc.) since those came from the CSV
+above. When your RR API key arrives, the Setup wizard will fill in talkgroup
+alpha tags for the trunked system too.
 ────────────────────────────────────────────────────────
 EOF
