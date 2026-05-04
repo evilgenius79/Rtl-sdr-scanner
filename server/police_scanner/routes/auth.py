@@ -20,8 +20,6 @@ from ..security import (
     issue_csrf_token,
     require_csrf,
 )
-from ..settings import get_settings
-
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
@@ -41,14 +39,13 @@ async def login(
     username: str = Form(..., min_length=1, max_length=64),
     password: str = Form(..., min_length=1, max_length=256),
 ) -> dict:
-    settings = get_settings()
     user = await authenticate(username, password, ip=client_ip(request))
     token = await create_session(
         user, ip=client_ip(request), user_agent=request.headers.get("user-agent")
     )
-    response.set_cookie(SESSION_COOKIE, token, **cookie_kwargs(settings.scanner_public_url))
+    response.set_cookie(SESSION_COOKIE, token, **cookie_kwargs(request))
     csrf = issue_csrf_token()
-    response.set_cookie(CSRF_COOKIE, csrf, **csrf_cookie_kwargs(settings))
+    response.set_cookie(CSRF_COOKIE, csrf, **csrf_cookie_kwargs(request))
     return {"ok": True, "username": user.username, "csrf": csrf}
 
 

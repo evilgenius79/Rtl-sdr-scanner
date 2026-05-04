@@ -12,7 +12,7 @@ from fastapi import HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from .settings import Settings, get_settings
+from .settings import get_settings
 
 logger = logging.getLogger("police_scanner.security")
 
@@ -111,8 +111,15 @@ def issue_csrf_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def csrf_cookie_kwargs(settings: Settings) -> dict:
-    secure = settings.scanner_public_url.startswith("https://")
+def csrf_cookie_kwargs(request: Request) -> dict:
+    """Same scheme-derivation as cookie_kwargs in auth.py — see comment there."""
+    settings = get_settings()
+    scheme = request.url.scheme
+    if settings.scanner_trust_proxy:
+        forwarded_proto = request.headers.get("x-forwarded-proto")
+        if forwarded_proto:
+            scheme = forwarded_proto.split(",")[0].strip().lower()
+    secure = scheme == "https"
     return {
         "httponly": False,  # JS must read it
         "secure": secure,

@@ -203,8 +203,23 @@ def _locked(until: datetime) -> HTTPException:
 _DUMMY_HASH = _hasher.hash(secrets.token_urlsafe(32))
 
 
-def cookie_kwargs(public_url: str) -> dict:
-    secure = public_url.startswith("https://")
+def cookie_kwargs(request: Request) -> dict:
+    """Decide cookie flags from the actual request scheme.
+
+    Why not the configured SCANNER_PUBLIC_URL? Because the user's URL config
+    may be set to https://… (for the eventual public deployment) while LAN
+    testing happens over plain http://pi-ip:8080. If we set Secure=True on a
+    cookie issued over HTTP, the browser accepts it but won't *send* it back
+    on subsequent HTTP requests — instant auth-loop. Use the live request
+    scheme so cookies match the channel they were issued on.
+    """
+    settings = get_settings()
+    scheme = request.url.scheme
+    if settings.scanner_trust_proxy:
+        forwarded_proto = request.headers.get("x-forwarded-proto")
+        if forwarded_proto:
+            scheme = forwarded_proto.split(",")[0].strip().lower()
+    secure = scheme == "https"
     return {
         "httponly": True,
         "secure": secure,
