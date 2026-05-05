@@ -217,7 +217,7 @@ class RadioReferenceClient:
                     sids.append(sid)
             return sids
 
-        sid_queue: list[int] = _ingest_trs(county_raw.get("trsSystems", []))
+        sid_queue: list[int] = _ingest_trs(county_raw.get("trsList", []))
 
         # Statewide P25 networks (e.g. Indiana SAFE-T, Ohio MARCS) are exposed
         # under the *state* in RR, not under each county. Pull them in too so
@@ -229,10 +229,11 @@ class RadioReferenceClient:
                     state = str(
                         state_raw.get("stateAbbreviation")
                         or state_raw.get("abbreviation")
+                        or state_raw.get("stateName")
                         or state_raw.get("name")
                         or ""
                     )
-                sid_queue.extend(_ingest_trs(state_raw.get("trsSystems", [])))
+                sid_queue.extend(_ingest_trs(state_raw.get("trsList", [])))
             except RRError as exc:
                 logger.warning("Skipping state-level TRS lookup (stid=%s): %s", state_id, exc)
 
