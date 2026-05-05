@@ -24,9 +24,11 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+import requests
 from zeep import Client
 from zeep.exceptions import Error as ZeepError
 from zeep.helpers import serialize_object
+from zeep.transports import Transport
 
 from .settings import get_settings
 
@@ -130,7 +132,19 @@ class RadioReferenceClient:
             )
         assert settings.rr_app_key and settings.rr_password and settings.rr_username
         try:
-            self._client = Client(WSDL_URL)
+            # RR Web Domain Integration Keys validate the Origin/Referer header
+            # against the domain registered with RadioReference. zeep's default
+            # transport sends neither, so we install a requests.Session that does.
+            session = requests.Session()
+            origin = settings.scanner_public_url.rstrip("/")
+            session.headers.update(
+                {
+                    "Origin": origin,
+                    "Referer": origin + "/",
+                }
+            )
+            transport = Transport(session=session)
+            self._client = Client(WSDL_URL, transport=transport)
         except Exception as exc:
             raise RRError(f"Could not load RadioReference WSDL: {exc}") from exc
         self._auth = {
