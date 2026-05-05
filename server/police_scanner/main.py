@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.types import Scope
 
 from .auth import ensure_admin_user
 from .db import init_db
@@ -85,8 +86,26 @@ async def csrf_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+class RevalidatingStaticFiles(StaticFiles):
+    """StaticFiles that disables caching for first-party assets.
+
+    Browsers (and Cloudflare) cache /static/*.js and *.css aggressively.
+    After a deploy that lands at the same URL, users would otherwise keep
+    running stale JS until they hard-refreshed. Setting no-cache forces a
+    cheap ETag revalidation on every request — the browser sends If-None-Match
+    and the server returns 304 if unchanged. Vendored libs under
+    /static/js/vendor/ are content-addressable enough to stay cacheable.
+    """
+
+    async def get_response(self, path: str, scope: Scope):
+        response = await super().get_response(path, scope)
+        if not path.startswith("js/vendor/"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
+
 # Static + templates
-app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
+app.mount("/static", RevalidatingStaticFiles(directory=str(HERE / "static")), name="static")
 
 
 @app.get("/")
