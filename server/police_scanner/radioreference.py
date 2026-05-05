@@ -204,6 +204,12 @@ class RadioReferenceClient:
         county_raw = serialize_object(await self._call("getCountyInfo", county_id)) or {}
         county_name = str(county_raw.get("countyName") or county_raw.get("name") or "")
         state = str(county_raw.get("stateAbbreviation") or county_raw.get("state") or "")
+        logger.warning(
+            "RR county ctid=%s keys=%s trsList_len=%s",
+            county_id,
+            sorted(county_raw.keys()),
+            len(county_raw.get("trsList") or []),
+        )
 
         trs_systems: list[TrsInfo] = []
         seen_sids: set[int] = set()
@@ -225,6 +231,12 @@ class RadioReferenceClient:
         if state_id:
             try:
                 state_raw = serialize_object(await self._call("getStateInfo", state_id)) or {}
+                logger.warning(
+                    "RR state stid=%s keys=%s trsList_len=%s",
+                    state_id,
+                    sorted(state_raw.keys()),
+                    len(state_raw.get("trsList") or []),
+                )
                 if not state:
                     state = str(
                         state_raw.get("stateAbbreviation")
@@ -237,6 +249,7 @@ class RadioReferenceClient:
             except RRError as exc:
                 logger.warning("Skipping state-level TRS lookup (stid=%s): %s", state_id, exc)
 
+        logger.warning("RR sid_queue=%s", sid_queue)
         for sid in sid_queue:
             try:
                 trs_systems.append(await self.trs_info(sid))
