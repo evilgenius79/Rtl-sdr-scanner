@@ -120,7 +120,12 @@ async def lookup(payload: ZipLookupRequest) -> SetupPreview:
         zinfo = await rr.lookup_zip(payload.zip)
         county = await rr.county_dataset(zinfo.county_id)
     except RRError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        # 422 (not 502) so Cloudflare/proxies pass the JSON body through and the
+        # actual RR reason ("Invalid or empty application key", "credentials not
+        # configured", etc.) is visible in the wizard instead of a generic gateway
+        # error page.
+        logger.warning("RR lookup failed for zip=%s: %s", payload.zip, exc)
+        raise HTTPException(status_code=422, detail=_humanize_rr_error(exc)) from exc
     return _county_to_preview(payload.zip, county)
 
 
@@ -135,7 +140,8 @@ async def apply(
         zinfo = await rr.lookup_zip(payload.zip)
         county = await rr.county_dataset(zinfo.county_id)
     except RRError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.warning("RR apply failed for zip=%s: %s", payload.zip, exc)
+        raise HTTPException(status_code=422, detail=_humanize_rr_error(exc)) from exc
 
     selected_trs: TrsInfo | None = None
     selected_site: SiteRow | None = None
@@ -361,6 +367,27 @@ def _county_to_preview(zip_code: str, county: CountyDataset) -> SetupPreview:
         trs_systems=trs_previews,
         conventional=conv,
     )
+
+
+def _humanize_rr_error(exc: RRError) -> str:
+    """Map raw RR fault strings to actionable wizard messages."""
+    msg = str(exc)
+    low = msg.lower()
+    if "invalid or empty application key" in low or "invalid application key" in low:
+        return (
+            "RadioReference rejected the API key. The SOAP API requires an "
+            "Application Integration Key (not a Web Domain Integration Key). "
+            "Apply at https://www.radioreference.com/apps/api/?mode=apply, "
+            "then set RR_APP_KEY in the env file and restart police-scanner."
+        )
+    if "credentials not configured" in low:
+        return (
+            "RadioReference credentials are not set. Add RR_APP_KEY, "
+            "RR_USERNAME, RR_PASSWORD to the env file and restart police-scanner."
+        )
+    if "not found" in low and "zip" in low:
+        return msg  # already actionable
+    return f"RadioReference: {msg}"
 
 
 def _short_name(trs: TrsInfo) -> str:

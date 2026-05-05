@@ -96,7 +96,10 @@ export default {
         <button class="primary" :disabled="state.loading || !/^\\d{5}$/.test(state.zip)" @click="lookup" style="margin-left:0.5rem">
           {{ state.loading ? 'Looking up…' : 'Look up' }}
         </button>
-        <p v-if="state.error" class="error">{{ state.error }}</p>
+        <div v-if="state.error" class="error-box" role="alert">
+          <strong>Couldn't continue:</strong>
+          <pre class="error-detail">{{ state.error }}</pre>
+        </div>
       </div>
 
       <div v-if="state.step === 'pick' && state.preview" class="setup-step">
@@ -156,7 +159,10 @@ export default {
             {{ state.loading ? 'Saving…' : 'Save & generate trunk-recorder config' }}
           </button>
         </div>
-        <p v-if="state.error" class="error">{{ state.error }}</p>
+        <div v-if="state.error" class="error-box" role="alert">
+          <strong>Couldn't continue:</strong>
+          <pre class="error-detail">{{ state.error }}</pre>
+        </div>
       </div>
 
       <div v-if="state.step === 'done'" class="setup-step">

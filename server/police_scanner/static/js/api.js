@@ -34,8 +34,25 @@ export async function api(path, { method = 'GET', body, params } = {}) {
     throw new Error('unauthenticated');
   }
   if (!res.ok) {
-    let msg = res.statusText;
-    try { const d = await res.json(); if (d.detail) msg = d.detail; } catch {}
+    // Prefer FastAPI's JSON {detail: "..."} body. If the response was rewritten
+    // by an intermediary (Cloudflare error page, etc.) into HTML, surface the
+    // status + a snippet so the user sees something useful instead of a bare
+    // "Bad Gateway".
+    let msg = `${res.status} ${res.statusText}`.trim();
+    try {
+      const d = await res.clone().json();
+      if (typeof d.detail === 'string') msg = d.detail;
+      else if (Array.isArray(d.detail) && d.detail[0]?.msg) msg = d.detail[0].msg;
+    } catch {
+      try {
+        const t = (await res.text()).trim();
+        if (t) {
+          const titleMatch = t.match(/<title>([^<]+)<\/title>/i);
+          const snippet = titleMatch ? titleMatch[1] : t.slice(0, 200);
+          msg = `${msg} — ${snippet}`;
+        }
+      } catch {}
+    }
     throw new Error(msg);
   }
   if (res.status === 204) return null;
