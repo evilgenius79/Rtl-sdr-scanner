@@ -38,6 +38,7 @@ def main() -> int:
         return 2
 
     for candidate in (
+        Path("/etc/police-scanner/env"),
         Path("/etc/police-scanner/scanner.env"),
         Path.home() / "Rtl-sdr-scanner" / ".env",
     ):
