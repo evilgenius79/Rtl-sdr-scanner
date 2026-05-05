@@ -118,7 +118,7 @@ async def lookup(payload: ZipLookupRequest) -> SetupPreview:
     rr = get_client()
     try:
         zinfo = await rr.lookup_zip(payload.zip)
-        county = await rr.county_dataset(zinfo.county_id)
+        county = await rr.county_dataset(zinfo.county_id, state_id=zinfo.state_id)
     except RRError as exc:
         # 422 (not 502) so Cloudflare/proxies pass the JSON body through and the
         # actual RR reason ("Invalid or empty application key", "credentials not
@@ -138,7 +138,7 @@ async def apply(
     rr = get_client()
     try:
         zinfo = await rr.lookup_zip(payload.zip)
-        county = await rr.county_dataset(zinfo.county_id)
+        county = await rr.county_dataset(zinfo.county_id, state_id=zinfo.state_id)
     except RRError as exc:
         logger.warning("RR apply failed for zip=%s: %s", payload.zip, exc)
         raise HTTPException(status_code=422, detail=_humanize_rr_error(exc)) from exc

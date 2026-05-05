@@ -200,16 +200,43 @@ class RadioReferenceClient:
             longitude=float(raw["lon"]) if raw.get("lon") else None,
         )
 
-    async def county_dataset(self, county_id: int) -> CountyDataset:
+    async def county_dataset(self, county_id: int, state_id: int | None = None) -> CountyDataset:
         county_raw = serialize_object(await self._call("getCountyInfo", county_id)) or {}
         county_name = str(county_raw.get("countyName") or county_raw.get("name") or "")
         state = str(county_raw.get("stateAbbreviation") or county_raw.get("state") or "")
 
         trs_systems: list[TrsInfo] = []
-        for trs in county_raw.get("trsSystems", []) or []:
-            sid = int(trs.get("sid") or trs.get("trsId") or 0)
-            if not sid:
-                continue
+        seen_sids: set[int] = set()
+
+        def _ingest_trs(raw_list: Any) -> list[int]:
+            sids: list[int] = []
+            for trs in raw_list or []:
+                sid = int(trs.get("sid") or trs.get("trsId") or 0)
+                if sid and sid not in seen_sids:
+                    seen_sids.add(sid)
+                    sids.append(sid)
+            return sids
+
+        sid_queue: list[int] = _ingest_trs(county_raw.get("trsSystems", []))
+
+        # Statewide P25 networks (e.g. Indiana SAFE-T, Ohio MARCS) are exposed
+        # under the *state* in RR, not under each county. Pull them in too so
+        # ZIP-driven setup actually finds them.
+        if state_id:
+            try:
+                state_raw = serialize_object(await self._call("getStateInfo", state_id)) or {}
+                if not state:
+                    state = str(
+                        state_raw.get("stateAbbreviation")
+                        or state_raw.get("abbreviation")
+                        or state_raw.get("name")
+                        or ""
+                    )
+                sid_queue.extend(_ingest_trs(state_raw.get("trsSystems", [])))
+            except RRError as exc:
+                logger.warning("Skipping state-level TRS lookup (stid=%s): %s", state_id, exc)
+
+        for sid in sid_queue:
             try:
                 trs_systems.append(await self.trs_info(sid))
             except RRError as exc:
